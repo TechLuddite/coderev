@@ -248,7 +248,7 @@ describe("hidden characters", () => {
   const ZWSP = "\u200B";
   const TAGS = "\u{E0069}\u{E0067}";
   const HIDDEN =
-    /[\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]|[\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}]/u;
+    /[\u00AD\u034F\u115F\u1160\u17B4\u17B5\u180B-\u180F\u2028\u2029\u3164\uFFA0\uFFF9-\uFFFB\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]|[\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}]/u;
   const prompts = () =>
     behaviour.bodies.map((body) =>
       (JSON.parse(body) as { messages: Array<{ content: string }> }).messages

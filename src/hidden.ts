@@ -13,9 +13,10 @@
  *
  * Legitimate text stays quiet: a ZWJ inside an emoji sequence, a ZWNJ or ZWJ
  * between letters of a script that joins (Arabic and Persian, Syriac, the
- * Indic scripts), one variation selector after its base character, and a
- * byte order mark at the start of a file. Bidi controls, direction marks
- * included, are reported everywhere.
+ * Indic scripts), one variation selector after a character that has that
+ * variant (an emoji, a keycap, a Han ideograph, a math symbol, a Mongolian
+ * letter), and a byte order mark at the start of a file. Bidi controls,
+ * direction marks included, are reported everywhere.
  */
 import type { FindingSeverity, ReviewFinding } from "./review.ts";
 
@@ -71,10 +72,31 @@ const NAMES: Readonly<Record<number, string>> = {
   0x206e: "NATIONAL DIGIT SHAPES",
   0x206f: "NOMINAL DIGIT SHAPES",
   0xfeff: "ZERO WIDTH NO-BREAK SPACE",
+  0x00ad: "SOFT HYPHEN",
+  0x034f: "COMBINING GRAPHEME JOINER",
+  0x115f: "HANGUL CHOSEONG FILLER",
+  0x1160: "HANGUL JUNGSEONG FILLER",
+  0x17b4: "KHMER VOWEL INHERENT AQ",
+  0x17b5: "KHMER VOWEL INHERENT AA",
+  0x180b: "MONGOLIAN FREE VARIATION SELECTOR ONE",
+  0x180c: "MONGOLIAN FREE VARIATION SELECTOR TWO",
+  0x180d: "MONGOLIAN FREE VARIATION SELECTOR THREE",
+  0x180f: "MONGOLIAN FREE VARIATION SELECTOR FOUR",
+  0x2028: "LINE SEPARATOR",
+  0x2029: "PARAGRAPH SEPARATOR",
+  0x3164: "HANGUL FILLER",
+  0xffa0: "HALFWIDTH HANGUL FILLER",
+  0xfff9: "INTERLINEAR ANNOTATION ANCHOR",
+  0xfffa: "INTERLINEAR ANNOTATION SEPARATOR",
+  0xfffb: "INTERLINEAR ANNOTATION TERMINATOR",
 };
 
-const HIDDEN =
-  /^(?:[\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFE00-\uFE0F]|[\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}])$/u;
+// Default_Ignorable_Code_Point is every character a renderer may draw as
+// nothing: the bidi and zero-width controls, tag characters, variation
+// selectors, and fillers such as U+3164 that JavaScript accepts in an
+// identifier. Line and paragraph separators draw as nothing in a diff view
+// too, and U+2028 ends a JavaScript comment, so the code after it runs.
+const HIDDEN = /^[\p{Default_Ignorable_Code_Point}\u2028\u2029\uFFF9-\uFFFB]$/u;
 const SELECTOR = /^[\uFE00-\uFE0F\u{E0100}-\u{E01EF}]$/u;
 const EMOJI_BEFORE_JOINER = /^[\p{Extended_Pictographic}\p{Emoji_Modifier}\uFE0F]$/u;
 const EMOJI = /^\p{Extended_Pictographic}$/u;
@@ -83,6 +105,11 @@ const MARK = /^\p{M}$/u;
 const JOINING_SCRIPT =
   /^[\p{Script=Arabic}\p{Script=Syriac}\p{Script=Nko}\p{Script=Devanagari}\p{Script=Bengali}\p{Script=Gurmukhi}\p{Script=Gujarati}\p{Script=Oriya}\p{Script=Tamil}\p{Script=Telugu}\p{Script=Kannada}\p{Script=Malayalam}\p{Script=Sinhala}]$/u;
 const HAN = /^\p{Script=Han}$/u;
+const MATH = /^\p{Sm}$/u;
+const MONGOLIAN = /^\p{Script=Mongolian}$/u;
+const EMOJI_BASE = /^\p{Emoji}$/u;
+const KEYCAP_BASE = /^[0-9#*]$/u;
+const MONGOLIAN_SELECTOR = /^[\u180B-\u180D\u180F]$/u;
 
 type Kind = "tag" | "selector" | "single";
 
@@ -99,6 +126,8 @@ function severityOf(codePoint: number): FindingSeverity {
   const high =
     (codePoint >= 0x202a && codePoint <= 0x202e) ||
     (codePoint >= 0x2066 && codePoint <= 0x2069) ||
+    codePoint === 0x2028 ||
+    codePoint === 0x2029 ||
     kindOf(codePoint) !== "single";
   return high ? "high" : "medium";
 }
@@ -121,8 +150,21 @@ function isLegitimate(chars: ReadonlyArray<string>, index: number): boolean {
     // One selector picks a glyph for the character before it. Two in a row
     // pick nothing, and are how bytes get smuggled after ordinary text.
     if (SELECTOR.test(before) || SELECTOR.test(after) || before === "") return false;
+    // Only a character with that variant takes one. Spread one per letter
+    // over ordinary text, selectors carry four bits each and show nothing.
     const codePoint = char.codePointAt(0) ?? 0;
-    return codePoint <= 0xfe0f || HAN.test(before);
+    if (codePoint === 0xfe0e || codePoint === 0xfe0f) {
+      // Text or emoji presentation. A digit, # or * only takes one as part
+      // of a keycap.
+      if (KEYCAP_BASE.test(before)) return after === "\u20E3";
+      return EMOJI_BASE.test(before);
+    }
+    // Ideographic variants, and the standardized variants of math symbols.
+    return HAN.test(before) || (codePoint === 0xfe00 && MATH.test(before));
+  }
+  if (MONGOLIAN_SELECTOR.test(char)) {
+    const run = MONGOLIAN_SELECTOR.test(before) || MONGOLIAN_SELECTOR.test(after);
+    return !run && MONGOLIAN.test(before);
   }
   return false;
 }

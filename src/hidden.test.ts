@@ -32,7 +32,7 @@ const TAG_I = "\u{E0069}";
 const TAG_G = "\u{E0067}";
 const VS17 = "\u{E0100}";
 const HIDDEN =
-  /[\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFE00-\uFE0F]|[\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}]/u;
+  /[\u00AD\u034F\u115F\u1160\u17B4\u17B5\u180B-\u180F\u2028\u2029\u3164\uFFA0\uFFF9-\uFFFB\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFE00-\uFE0F]|[\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}]/u;
 
 /** A one-hunk diff adding `lines` to `path`, starting at new-side line `start`. */
 const added = (path: string, lines: ReadonlyArray<string>, start = 1) =>
@@ -157,6 +157,47 @@ describe("findHiddenCharacters", () => {
     const emoji = "❤\uFE0F and ☺\uFE0E";
     const ideographicVariant = "葛\u{E0100}";
     assert.deepEqual(locations(added("a.md", [emoji, ideographicVariant])), []);
+  });
+
+  it("reports single variation selectors spread over ordinary text", () => {
+    // One selector per letter carries four bits and shows nothing.
+    const spread = "h\uFE01e\uFE02l\uFE03l\uFE04o";
+    assert.deepEqual(locations(added("a.md", [spread, "a\uFE0F", "b\uFE0E", "1\uFE0F", "x\u{E0101}"])), [
+      "a.md:1",
+      "a.md:2",
+      "a.md:3",
+      "a.md:4",
+      "a.md:5",
+    ]);
+  });
+
+  it("stays quiet on keycaps, math variants and Mongolian free variation selectors", () => {
+    const keycap = "1\uFE0F\u20E3 #\uFE0F\u20E3";
+    const flagWithSelector = "\u{1F3F3}\uFE0F\u200D\u{1F308}";
+    const math = "\u2269\uFE00";
+    const mongolian = "\u1820\u180B";
+    assert.deepEqual(locations(added("a.md", [keycap, flagWithSelector, math, mongolian])), []);
+    assert.deepEqual(locations(added("a.md", ["\u1820\u180B\u180C", "a\u180B"])), ["a.md:1", "a.md:2"]);
+  });
+
+  it("reports fillers, soft hyphens and other default-ignorable characters as medium", () => {
+    // U+3164 is a valid JavaScript identifier that draws as nothing.
+    const lines = ["const \u3164 = 1;", "pass\u00ADword", "a\u034Fb", "x\uFFA0y", "c\u115Fd", "e\u17B4f", "g\uFFF9h", "i\u{1D173}j"];
+    const findings = findHiddenCharacters(added("a.js", lines));
+    assert.deepEqual(
+      findings.map((f) => [f.line, f.title, f.severity]),
+      lines.map((_, i) => [i + 1, HIDDEN_FORMAT_FINDING_TITLE, "medium"]),
+    );
+    assert.match(findings[0]?.detail ?? "", /U\+3164 HANGUL FILLER/);
+    assert.match(findings[1]?.detail ?? "", /U\+00AD SOFT HYPHEN/);
+  });
+
+  it("reports line and paragraph separators as high", () => {
+    // In JavaScript U+2028 ends a line comment, so the code after it runs.
+    const [finding] = findHiddenCharacters(added("a.js", ["// note\u2028evil();", "x\u2029y"]));
+    assert.equal(finding?.severity, "high");
+    assert.equal(finding?.title, HIDDEN_FINDING_TITLE);
+    assert.match(finding?.detail ?? "", /U\+2028 LINE SEPARATOR/);
   });
 
   it("stays quiet on a byte order mark at the start of a file, and reports one anywhere else", () => {
@@ -554,6 +595,11 @@ describe("escapeHiddenCharacters", () => {
   it("leaves no hidden character behind", () => {
     const text = `${BOM}a${RLO}${LRI}b${PDI}${ZWJ}${ZWJ}c${TAG_I}${VS17}\u061C\u180E\u2060\u2064\u206A x\uFE00\uFE01`;
     assert.doesNotMatch(escapeHiddenCharacters(text), HIDDEN);
+  });
+
+  it("escapes fillers and separators so none reach the model", () => {
+    assert.equal(escapeHiddenCharacters("const \u3164 = 1; // a\u2028b"), "const [U+3164] = 1; // a[U+2028]b");
+    assert.equal(escapeHiddenCharacters("h\uFE01i"), "h[1 hidden variation selector]i");
   });
 
   it("is idempotent", () => {
