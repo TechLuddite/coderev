@@ -116,6 +116,7 @@ variables, never a code change.
 | `REVIEW_MODEL` | Overrides the provider's default model. |
 | `REVIEW_API_BASE_URL` | Any other compatible endpoint, including a local server. |
 | `REVIEW_EXEC_COMMAND` | Command used by the `exec` provider. |
+| `REVIEW_JSON_MODE` | `1` sends `response_format: {"type": "json_object"}` on every HTTP request, so an endpoint that supports JSON mode returns valid JSON. Off by default, because not every compatible endpoint accepts the field. |
 
 DeepSeek V4 Flash is currently the default during its viability trial, and it
 bills per token. That last part matters more than it sounds.

@@ -9,6 +9,7 @@ import {
   execIdleTimeoutMs,
   execTotalTimeoutMs,
   firstByteTimeoutMs,
+  jsonModeEnabled,
   DEFAULT_REVIEW_PROVIDER,
   EMPTY_USAGE,
   estimateCostUsd,
@@ -417,6 +418,21 @@ describe("first-byte budget", () => {
         firstByteTimeoutMs({ REVIEW_FIRST_BYTE_TIMEOUT_MS: raw }, 0),
         COMPLETION_FIRST_BYTE_TIMEOUT_MS,
       );
+    }
+  });
+});
+
+describe("JSON mode switch", () => {
+  it("is off unless REVIEW_JSON_MODE says on", () => {
+    assert.equal(jsonModeEnabled({}), false);
+    for (const raw of ["", "0", "false", "no", "off", "json"]) {
+      assert.equal(jsonModeEnabled({ REVIEW_JSON_MODE: raw }), false, raw);
+    }
+  });
+
+  it("accepts the usual spellings of on", () => {
+    for (const raw of ["1", "true", "TRUE", " yes ", "On"]) {
+      assert.equal(jsonModeEnabled({ REVIEW_JSON_MODE: raw }), true, raw);
     }
   });
 });

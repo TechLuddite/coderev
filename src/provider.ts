@@ -72,6 +72,25 @@ export function firstByteTimeoutMs(
 }
 
 /**
+ * Whether HTTP requests ask for JSON mode, `response_format: {type: "json_object"}`.
+ *
+ * Every prompt sent here asks for one JSON object, and a model that quotes code
+ * in a finding can break the object with a single unescaped double quote. The
+ * parser then drops every finding in the reply, and the review reads as a
+ * parse failure. Measured 2026-11-08 on devstral-small-2 24B through LiteLLM to
+ * Ollama, replaying one captured request at temperature 0: 5 of 6 replies
+ * without JSON mode failed JSON.parse at `[ -s "$dir/$rel" ]` inside a detail
+ * string, and 3 of 3 with JSON mode parsed.
+ *
+ * Opt-in with REVIEW_JSON_MODE set to 1, true, yes or on, because not every
+ * OpenAI-compatible endpoint accepts the field. Exec providers ignore it.
+ */
+export function jsonModeEnabled(env: Readonly<Record<string, string | undefined>>): boolean {
+  const raw = env.REVIEW_JSON_MODE?.trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+/**
  * Exec providers get their own, much larger idle budget.
  *
  * The HTTP timeout assumes a streaming endpoint: tokens arrive continuously,
@@ -650,6 +669,7 @@ async function requestCompletionOnce(
         temperature: input.temperature,
         stream: true,
         stream_options: { include_usage: true },
+        ...(jsonModeEnabled(process.env) ? { response_format: { type: "json_object" } } : {}),
         messages: [
           { role: "system", content: input.systemPrompt },
           { role: "user", content: input.userPrompt },

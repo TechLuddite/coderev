@@ -242,6 +242,41 @@ describe("pipeline against a streaming provider", () => {
   });
 });
 
+describe("JSON mode", () => {
+  const saved = process.env.REVIEW_JSON_MODE;
+  after(() => {
+    if (saved === undefined) delete process.env.REVIEW_JSON_MODE;
+    else process.env.REVIEW_JSON_MODE = saved;
+  });
+
+  it("asks for a JSON object on every request when REVIEW_JSON_MODE is on", async () => {
+    reset();
+    process.env.REVIEW_JSON_MODE = "1";
+    behaviour.findResponse = JSON.stringify({
+      findings: [{ file: "a.ts", line: 1, severity: "high", title: "Bug", detail: "d" }],
+    });
+
+    await reviewDiff({ diff: DIFF, conventions: null, provider });
+
+    // Find stage plus panel votes: every request carries the field, because
+    // every prompt asks for one JSON object.
+    assert.ok(behaviour.bodies.length > 1);
+    for (const body of behaviour.bodies) {
+      assert.deepEqual(JSON.parse(body).response_format, { type: "json_object" });
+    }
+  });
+
+  it("leaves the field out by default", async () => {
+    reset();
+    delete process.env.REVIEW_JSON_MODE;
+
+    await requestCompletion({ provider, systemPrompt: "s", userPrompt: "u", temperature: 0 });
+
+    assert.equal(behaviour.bodies.length, 1);
+    assert.equal("response_format" in JSON.parse(behaviour.bodies[0] ?? "{}"), false);
+  });
+});
+
 describe("hidden characters", () => {
   const RLO = "\u202E";
   const LRI = "\u2066";
